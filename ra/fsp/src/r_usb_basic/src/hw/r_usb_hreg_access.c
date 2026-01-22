@@ -1,5 +1,5 @@
 /***********************************************************************************************************************
- * Copyright [2020-2022] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
+ * Copyright [2020-2023] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
  *
  * This software and documentation are supplied by Renesas Electronics America Inc. and may only be used with products
  * of Renesas Electronics Corp. and its affiliates ("Renesas").  No other uses are authorized.  Renesas products are
@@ -759,9 +759,9 @@ void hw_usb_hmodule_init (uint8_t usb_ip)
             /* none */
         }
 
- #if defined(USB_HIGH_SPEED_MODULE)
-        USB_M0->PHYSLEW = 0x5;
- #endif                                /* defined (USB_HIGH_SPEED_MODULE) */
+ #if defined(USB_SUPPORT_PHYSLEW)
+        USB_M0->PHYSLEW = USB_PHYSLEW_VALUE;
+ #endif                                /* defined(USB_SUPPORT_PHYSLEW) */
 
         USB_M0->SYSCFG |= USB_DCFM;
 
@@ -772,6 +772,14 @@ void hw_usb_hmodule_init (uint8_t usb_ip)
         sts = usb_chattaring((uint16_t *) &USB_M0->SYSSTS0);
 
         USB_M0->SYSCFG |= USB_USBE;
+
+ #if defined(USB_SUPPORT_HOCO_MODULE)
+        if (0 == (R_SYSTEM->SCKSCR & R_SYSTEM_SCKSCR_CKSEL_Msk))
+        {
+            /* Use HOCO */
+            hw_usb_set_uckselc();
+        }
+ #endif                                /* defined(USB_SUPPORT_HOCO_MODULE) */
 
         USB_M0->CFIFOSEL  = USB0_CFIFO_MBW;
         USB_M0->D0FIFOSEL = USB0_D0FIFO_MBW;
@@ -840,6 +848,8 @@ void hw_usb_hmodule_init (uint8_t usb_ip)
     else
     {
   #if defined(USB_HIGH_SPEED_MODULE)
+        USB_M1->PHYSET = (USB_DIRPD | USB_PLLRESET | USB_CLKSEL);
+
    #if USB_CFG_CLKSEL == USB_CFG_24MHZ
         USB_M1->PHYSET &= (uint16_t) ~USB_HSEB;
    #endif                              /* USB_CFG_CLKSEL == USB_CFG_24MHZ */
@@ -909,6 +919,7 @@ void hw_usb_hmodule_init (uint8_t usb_ip)
         USB_M1->D0FIFOSEL |= USB_BIGEND;
         USB_M1->D1FIFOSEL |= USB_BIGEND;
   #endif
+
         switch (sts)
         {
             case USB_FS_JSTS:          /* USB device already connected */

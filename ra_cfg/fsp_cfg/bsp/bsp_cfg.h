@@ -10,13 +10,16 @@
 #include "board_cfg.h"
 #define RA_NOT_DEFINED 0
 #ifndef BSP_CFG_RTOS
-#if (RA_NOT_DEFINED) != (4)
+#if (RA_NOT_DEFINED) != (6)
 #define BSP_CFG_RTOS (2)
 #elif (RA_NOT_DEFINED) != (RA_NOT_DEFINED)
               #define BSP_CFG_RTOS (1)
              #else
               #define BSP_CFG_RTOS (0)
              #endif
+#endif
+#ifndef BSP_CFG_RTC_USED
+#define BSP_CFG_RTC_USED (RA_NOT_DEFINED)
 #endif
 #undef RA_NOT_DEFINED
 #if defined(_RA_BOOT_IMAGE)

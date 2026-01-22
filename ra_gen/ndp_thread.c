@@ -4,9 +4,9 @@
 #if 1
 static StaticTask_t ndp_thread_memory;
 #if defined(__ARMCC_VERSION)           /* AC6 compiler */
-                static uint8_t ndp_thread_stack[32768] BSP_PLACE_IN_SECTION(BSP_UNINIT_SECTION_PREFIX ".stack.thread") BSP_ALIGN_VARIABLE(BSP_STACK_ALIGNMENT);
+                static uint8_t ndp_thread_stack[40960] BSP_PLACE_IN_SECTION(BSP_UNINIT_SECTION_PREFIX ".stack.thread") BSP_ALIGN_VARIABLE(BSP_STACK_ALIGNMENT);
                 #else
-static uint8_t ndp_thread_stack[32768] BSP_PLACE_IN_SECTION(BSP_UNINIT_SECTION_PREFIX ".stack.ndp_thread") BSP_ALIGN_VARIABLE(BSP_STACK_ALIGNMENT);
+static uint8_t ndp_thread_stack[40960] BSP_PLACE_IN_SECTION(BSP_UNINIT_SECTION_PREFIX ".stack.ndp_thread") BSP_ALIGN_VARIABLE(BSP_STACK_ALIGNMENT);
 #endif
 #endif
 TaskHandle_t ndp_thread;
@@ -78,7 +78,7 @@ void ndp_thread_create(void)
                     BaseType_t ndp_thread_create_err = xTaskCreate(
                     #endif
                                     ndp_thread_func,
-                                    (const char*) "NDP Thread", 32768 / 4, // In words, not bytes
+                                    (const char*) "NDP Thread", 40960 / 4, // In words, not bytes
                                     (void*) &ndp_thread_parameters, //pvParameters
                                     4,
 #if 1

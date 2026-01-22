@@ -1,5 +1,5 @@
 /***********************************************************************************************************************
- * Copyright [2020-2022] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
+ * Copyright [2020-2023] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
  *
  * This software and documentation are supplied by Renesas Electronics America Inc. and may only be used with products
  * of Renesas Electronics Corp. and its affiliates ("Renesas").  No other uses are authorized.  Renesas products are
@@ -50,7 +50,9 @@
  #if defined(USB_CFG_HPRN_USE)
   #include "../../../microsoft/azure-rtos/usbx/common/usbx_host_classes/inc/ux_host_class_printer.h"
  #endif                                /* defined(USB_CFG_HPRN_USE) */
-
+ #if defined(USB_CFG_HUVC_USE)
+  #include "../../../microsoft/azure-rtos/usbx/common/usbx_host_classes/inc/ux_host_class_video.h"
+ #endif                                /* defined(USB_CFG_HUVC_USE) */
  #if ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST)
   #include "../../../microsoft/azure-rtos/usbx/common/usbx_host_classes/inc/ux_host_class_hub.h"
  #endif /* ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST) */
@@ -118,13 +120,16 @@
 /******************************************************************************
  * Macro definitions
  ******************************************************************************/
-#define USB_VALUE_50     (50)
-#define USB_VALUE_100    (100)
-#define USB_VALUE_7FH    (0x7F)
-#define USB_VALUE_80H    (0x80)
-#define USB_VALUE_FFH    (0xFF)
+#define USB_VALUE_50             (50)
+#define USB_VALUE_100            (100)
+#define USB_VALUE_7FH            (0x7F)
+#define USB_VALUE_80H            (0x80)
+#define USB_VALUE_FFH            (0xFF)
 
-#define USB_OTG_IRQ      (0x7)
+#define USB_MASK_ALIGN_2_BYTE    (0x1U)
+#define USB_MASK_ALIGN_4_BYTE    (0x3U)
+
+#define USB_OTG_IRQ              (0x7)
 
 /******************************************************************************
  * Exported global variables (to be accessed by other files)
@@ -444,6 +449,7 @@ fsp_err_t R_USB_Open (usb_ctrl_t * const p_api_ctrl, usb_cfg_t const * const p_c
         case USB_CLASS_INTERNAL_PMSC:
         case USB_CLASS_INTERNAL_PAUD:
         case USB_CLASS_INTERNAL_PPRN:
+        case USB_CLASS_INTERNAL_DFU:
         {
             FSP_ERROR_RETURN(USB_MODE_PERI == p_cfg->usb_mode, FSP_ERR_USB_PARAMETER)
 
@@ -472,6 +478,7 @@ fsp_err_t R_USB_Open (usb_ctrl_t * const p_api_ctrl, usb_cfg_t const * const p_c
         case USB_CLASS_INTERNAL_HVND:
         case USB_CLASS_INTERNAL_HMSC:
         case USB_CLASS_INTERNAL_HPRN:
+        case USB_CLASS_INTERNAL_HUVC:
         {
  #if defined(BSP_MCU_GROUP_RA2A1)
 
@@ -752,6 +759,26 @@ fsp_err_t R_USB_Open (usb_ctrl_t * const p_api_ctrl, usb_cfg_t const * const p_c
                 }
             }
   #endif                               /* defined(USB_CFG_HPRN_USE) */
+  #if defined(USB_CFG_HUVC_USE)
+            ux_host_stack_class_register(_ux_system_host_class_video_name, ux_host_class_video_entry);
+            if (USB_SPEED_HS == p_cfg->usb_speed)
+            {
+                ux_host_stack_hcd_register((UCHAR *) "fsp_usbx_huvc_hs", usb_host_usbx_initialize, R_USB_HS0_BASE, 0);
+            }
+            else
+            {
+                if (USB_IP0 == p_cfg->module_number)
+                {
+                    ux_host_stack_hcd_register((UCHAR *) "fsp_usbx_huvc_fs", usb_host_usbx_initialize, R_USB_FS0_BASE,
+                                               0);
+                }
+                else
+                {
+                    ux_host_stack_hcd_register((UCHAR *) "fsp_usbx_huvc_hs", usb_host_usbx_initialize, R_USB_HS0_BASE,
+                                               0);
+                }
+            }
+  #endif                               /* defined(USB_CFG_HUVC_USE) */
  #endif                                /* #if (BSP_CFG_RTOS == 0) */
         }
 #endif                                 /* (USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST */
@@ -873,6 +900,10 @@ fsp_err_t R_USB_Open (usb_ctrl_t * const p_api_ctrl, usb_cfg_t const * const p_c
             g_usb_open_class[p_ctrl->module_number] |= (uint16_t) (1 << USB_CLASS_INTERNAL_PPRN);
 #endif                                 /* defined(USB_CFG_PPRN_USE) */
 
+#if defined(USB_CFG_DFU_USE)
+            g_usb_open_class[p_ctrl->module_number] |= (uint16_t) (1 << USB_CLASS_INTERNAL_DFU);
+#endif                                 /* defined(USB_CFG_PPRN_USE) */
+
 #if defined(USB_CFG_OTG_USE)
             _ux_system_otg->ux_system_otg_device_type = UX_OTG_DEVICE_B;
             (*g_p_otg_callback[p_ctrl->module_number])(UX_OTG_MODE_SLAVE);
@@ -893,10 +924,13 @@ fsp_err_t R_USB_Open (usb_ctrl_t * const p_api_ctrl, usb_cfg_t const * const p_c
         {
             usb_otg_irq_callback(0);
         }
+
+  #if USB_NUM_USBIP == 2
         else
         {
             usb2_otg_irq_callback(0);
         }
+  #endif                               /* USB_NUM_USBIP == 2 */
     }
  #endif                                /* defined(USB_CFG_OTG_USB) */
 #endif                                 /* (BSP_CFG_RTOS == 1) */
@@ -1019,6 +1053,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
  #if defined(USB_CFG_HPRN_USE)
                 ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_hprn_hs", R_USB_HS0_BASE, 0);
  #endif                                /* #if defined(USB_CFG_HPRN_USE) */
+ #if defined(USB_CFG_HUVC_USE)
+                ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_huvc_hs", R_USB_HS0_BASE, 0);
+ #endif                                /* #if defined(USB_CFG_HUVC_USE) */
                 usb_host_usbx_uninitialize(R_USB_HS0_BASE);
             }
             else
@@ -1035,6 +1072,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
  #if defined(USB_CFG_HPRN_USE)
                 ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_hprn_fs", R_USB_FS0_BASE, 0);
  #endif                                /* #if defined(USB_CFG_HPRN_USE) */
+ #if defined(USB_CFG_HUVC_USE)
+                ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_huvc_fs", R_USB_FS0_BASE, 0);
+ #endif                                /* #if defined(USB_CFG_HUVC_USE) */
                 usb_host_usbx_uninitialize(R_USB_FS0_BASE);
             }
 
@@ -1050,6 +1090,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
  #if defined(USB_CFG_HPRN_USE)
             ux_host_stack_class_unregister(ux_host_class_printer_entry);
  #endif                                /* #if defined(USB_CFG_HPRN_USE) */
+ #if defined(USB_CFG_HUVC_USE)
+            ux_host_stack_class_unregister(ux_host_class_video_entry);
+ #endif                                /* #if defined(USB_CFG_HUVC_USE) */
         }
 
         g_is_usbx_otg_host_class_init[utr.ip] = USB_NO;
@@ -1171,6 +1214,12 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
                 break;
             }
 
+            case USB_CLASS_INTERNAL_HUVC:
+            {
+                class_code = (uint8_t) USB_IFCLS_VID;
+                break;
+            }
+
             default:
             {
                 return FSP_ERR_ASSERTION;
@@ -1207,6 +1256,14 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
     hw_usb_clear_vdcen();
  #endif                                /* (defined(USB_LDO_REGULATOR_MODULE) && (USB_CFG_LDO_REGULATOR == USB_CFG_ENABLE)) */
 
+ #if defined(USB_SUPPORT_HOCO_MODULE)
+    if (0 == (R_SYSTEM->SCKSCR & R_SYSTEM_SCKSCR_CKSEL_Msk))
+    {
+        /* Use HOCO */
+        hw_usb_clear_uckselc();
+    }
+ #endif                                /* defined(USB_SUPPORT_HOCO_MODULE) */
+
     ret_code = usb_module_stop(p_ctrl->module_number);
 
     if (FSP_SUCCESS == ret_code)
@@ -1237,6 +1294,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
    #if defined(USB_CFG_HHID_USE)
                 ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_hhid_hs", R_USB_HS0_BASE, 0);
    #endif                              /* #if defined(USB_CFG_HHID_USE) */
+   #if defined(USB_CFG_HUVC_USE)
+                ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_huvc_hs", R_USB_HS0_BASE, 0);
+   #endif                              /* #if defined(USB_CFG_HUVC_USE) */
                 usb_host_usbx_uninitialize(R_USB_HS0_BASE);
             }
             else
@@ -1250,6 +1310,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
    #if defined(USB_CFG_HHID_USE)
                 ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_hhid_fs", R_USB_FS0_BASE, 0);
    #endif                              /* #if defined(USB_CFG_HHID_USE) */
+   #if defined(USB_CFG_HUVC_USE)
+                ux_host_stack_hcd_unregister((UCHAR *) "fsp_usbx_huvc_fs", R_USB_FS0_BASE, 0);
+   #endif                              /* #if defined(USB_CFG_HUVC_USE) */
                 usb_host_usbx_uninitialize(R_USB_FS0_BASE);
             }
 
@@ -1261,6 +1324,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
    #endif                              /* #if defined(USB_CFG_HMSC_USE) */
    #if defined(USB_CFG_HHID_USE)
             ux_host_stack_class_unregister(ux_host_class_hid_entry);
+   #endif                              /* #if defined(USB_CFG_HHID_USE) */
+   #if defined(USB_CFG_HUVC_USE)
+            ux_host_stack_class_unregister(ux_host_class_video_entry);
    #endif                              /* #if defined(USB_CFG_HHID_USE) */
 
    #if !defined(USB_CFG_OTG_USE)
@@ -1382,6 +1448,9 @@ fsp_err_t R_USB_Close (usb_ctrl_t * const p_api_ctrl)
  * @note  (1). When using High-speed and enabling continuous transfer mode, allocate the storage area with a size that is a multiple of 2048.
  * @note  (2). When using High-speed and disabling continuous transfer mode, allocate the storage area with a size that is a multiple of 512.
  * @note  (3). When using Full-speed, allocate the storage area with a size that is a multiple of 64.
+ * @note 3. Specify the following address to the 2nd argument (p_buf) when using DMA transfer.
+ * @note  (1). When using High-speed module, specify start address of the buffer area aligned on 4-byte boundary.
+ * @note  (2). When using Full-speed module, specify start address of the buffer area aligned on 2-byte boundary.
  ******************************************************************************/
 fsp_err_t R_USB_Read (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32_t size, uint8_t destination)
 {
@@ -1444,6 +1513,22 @@ fsp_err_t R_USB_Read (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32_t s
                      FSP_ERR_USB_PARAMETER) /* Check USB Open device class */
 #endif  /* USB_CFG_PARAM_CHECKING_ENABLE */
 
+#if (USB_CFG_DMA == USB_CFG_ENABLE)
+    if (USB_IP0 == p_ctrl->module_number)
+    {
+        /* Alignment checking if "p_buf" is 2-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_2_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+
+ #if defined(USB_HIGH_SPEED_MODULE)
+    else
+    {
+        /* Alignment checking if "p_buf" is 4-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_4_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+ #endif                                /* defined(USB_HIGH_SPEED_MODULE) */
+#endif /* (USB_CFG_DMA == USB_CFG_ENABLE) */
+
     (void) R_USB_InfoGet(p_ctrl, &info, p_ctrl->device_address);
     if (USB_STATUS_CONFIGURED == info.device_status)
     {
@@ -1486,7 +1571,10 @@ fsp_err_t R_USB_Read (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32_t s
  * @note   When sending a ZLP, the user sets USB_NULL in the third argument (size) of R_USB_Write function as follow.
  * @note   e.g)
  * @note   R_USB_Write (&g_basic0_ctrl, &g_buf, USB_NULL);
- * @note 2. Do not call this API in the following function.
+ * @note 2. Specify the following address to the 2nd argument (p_buf) when using DMA transfer.
+ * @note  (1). When using High-speed module, specify start address of the buffer area aligned on 4-byte boundary.
+ * @note  (2). When using Full-speed module, specify start address of the buffer area aligned on 2-byte boundary.
+ * @note 3. Do not call this API in the following function.
  * @note   (1). Interrupt function.
  * @note   (2). Callback function ( for RTOS ).
  ******************************************************************************/
@@ -1550,6 +1638,22 @@ fsp_err_t R_USB_Write (usb_ctrl_t * const p_api_ctrl, uint8_t const * const p_bu
                                   (1 << p_ctrl->type)),
                      FSP_ERR_USB_PARAMETER) /* Check USB Open device class */
 #endif  /* USB_CFG_PARAM_CHECKING_ENABLE */
+
+#if (USB_CFG_DMA == USB_CFG_ENABLE)
+    if (USB_IP0 == p_ctrl->module_number)
+    {
+        /* Alignment checking if "p_buf" is 2-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_2_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+
+ #if defined(USB_HIGH_SPEED_MODULE)
+    else
+    {
+        /* Alignment checking if "p_buf" is 4-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_4_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+ #endif                                /* defined(USB_HIGH_SPEED_MODULE) */
+#endif /* (USB_CFG_DMA == USB_CFG_ENABLE) */
 
     (void) R_USB_InfoGet(p_ctrl, &info, p_ctrl->device_address);
     if (USB_STATUS_CONFIGURED == info.device_status)
@@ -2261,6 +2365,9 @@ fsp_err_t R_USB_InfoGet (usb_ctrl_t * const p_api_ctrl, usb_info_t * p_info, uin
  * @note (1). When using High-speed and enabling continuous transfer mode, allocate the storage area with a size that is a multiple of 2048.
  * @note (2). When using High-speed and disabling continuous transfer mode, allocate the storage area with a size that is a multiple of 512.
  * @note (3). When using Full-speed, allocate the storage area with a size that is a multiple of 64.
+ * @note 3. Specify the following address to the 2nd argument (p_buf) when using DMA transfer.
+ * @note  (1). When using High-speed module, specify start address of the buffer area aligned on 4-byte boundary.
+ * @note  (2). When using Full-speed module, specify start address of the buffer area aligned on 2-byte boundary.
  ******************************************************************************/
 fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32_t size, uint8_t pipe_number)
 {
@@ -2294,7 +2401,7 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
  #endif                                /* USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST */
 
  #if USB_CFG_PARAM_CHECKING_ENABLE
-    FSP_ERROR_RETURN((((USB_PIPE0 != p_ctrl->pipe)) || (USB_MAXPIPE_NUM < p_ctrl->pipe)), FSP_ERR_USB_PARAMETER)
+    FSP_ERROR_RETURN(((USB_MIN_PIPE_NO <= p_ctrl->pipe) && (p_ctrl->pipe <= USB_MAX_PIPE_NO)), FSP_ERR_USB_PARAMETER)
 
     FSP_ASSERT(!((USB_NULL == p_buf) || (USB_NULL == size)))
 
@@ -2306,6 +2413,22 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
                      FSP_ERR_USB_PARAMETER) /* Check USB Open device class */
  #endif  /* USB_CFG_PARAM_CHECKING_ENABLE */
 
+ #if (USB_CFG_DMA == USB_CFG_ENABLE)
+    if (USB_IP0 == p_ctrl->module_number)
+    {
+        /* Alignment checking if "p_buf" is 2-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_2_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+
+  #if defined(USB_HIGH_SPEED_MODULE)
+    else
+    {
+        /* Alignment checking if "p_buf" is 4-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_4_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+  #endif                               /* defined(USB_HIGH_SPEED_MODULE) */
+ #endif /* (USB_CFG_DMA == USB_CFG_ENABLE) */
+
     ret_code = R_USB_InfoGet(p_ctrl, &info, p_ctrl->device_address);
     if (USB_STATUS_CONFIGURED == info.device_status)
     {
@@ -2314,9 +2437,9 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
         {
  #if ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST)
   #if (BSP_CFG_RTOS != 0)
-            p_tran_data = (usb_utr_t *) &tran_data;
+            p_tran_data = &tran_data;
   #else                                /* (BSP_CFG_RTOS != 0) */
-            p_tran_data = (usb_utr_t *) &g_usb_hdata[p_ctrl->module_number][p_ctrl->pipe];
+            p_tran_data = &g_usb_hdata[p_ctrl->module_number][p_ctrl->pipe];
   #endif  /* (BSP_CFG_RTOS != 0) */
 
             p_tran_data->ip           = p_ctrl->module_number;
@@ -2367,9 +2490,9 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
         {
  #if ((USB_CFG_MODE & USB_CFG_PERI) == USB_CFG_PERI)
   #if (BSP_CFG_RTOS != 0)
-            p_tran_data = (usb_utr_t *) &tran_data;
+            p_tran_data = &tran_data;
   #else                                                                     /* (BSP_CFG_RTOS != 0) */
-            p_tran_data = (usb_utr_t *) &g_usb_pdata[p_ctrl->pipe];
+            p_tran_data = &g_usb_pdata[p_ctrl->pipe];
   #endif  /* (BSP_CFG_RTOS != 0) */
 
             p_tran_data->ip           = p_ctrl->module_number;              /* USB Module Number */
@@ -2415,8 +2538,12 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
  #endif                                /* (USB_CFG_MODE & USB_CFG_PERI) == USB_CFG_PERI */
         }
     }
+    else
+    {
+        ret_code = FSP_ERR_USB_FAILED;
+    }
     return ret_code;
-#endif  /* !defined(USB_CFG_HVND_USE) && !defined(USB_CFG_PVND_USE) */
+#endif                                 /* !defined(USB_CFG_HVND_USE) && !defined(USB_CFG_PVND_USE) */
 }
 
 /**************************************************************************//**
@@ -2436,9 +2563,12 @@ fsp_err_t R_USB_PipeRead (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32
  * @note   When sending a ZLP, the user sets USB_NULL in the third argument (size) of R_USB_PipeWrite function as follow.
  * @note   e.g)
  * @note   R_USB_PipeWrite (&g_basic0_ctrl, &g_buf, USB_NULL, pipe_number);
- * @note 2. Do not call this API in the following function.
- * @note   (1). Interrupt function.
- * @note   (2). Callback function ( for RTOS ).
+ * @note 2. Specify the following address to the 2nd argument (p_buf) when using DMA transfer.
+ * @note  (1). When using High-speed module, specify start address of the buffer area aligned on 4-byte boundary.
+ * @note  (2). When using Full-speed module, specify start address of the buffer area aligned on 2-byte boundary.
+ * @note 3. Do not call this API in the following function.
+ * @note  (1). Interrupt function.
+ * @note  (2). Callback function ( for RTOS ).
  ******************************************************************************/
 fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint32_t size, uint8_t pipe_number)
 {
@@ -2471,8 +2601,7 @@ fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint3
     /* Argument Checking */
     FSP_ERROR_RETURN(!((USB_IP0 != p_ctrl->module_number) && (USB_IP1 != p_ctrl->module_number)), FSP_ERR_USB_PARAMETER)
 
-    FSP_ERROR_RETURN((((USB_NULL != p_buf) || (USB_PIPE0 != p_ctrl->pipe)) || (USB_MAXPIPE_NUM > p_ctrl->pipe)),
-                     FSP_ERR_USB_PARAMETER)
+    FSP_ERROR_RETURN(((USB_MIN_PIPE_NO <= p_ctrl->pipe) && (p_ctrl->pipe <= USB_MAX_PIPE_NO)), FSP_ERR_USB_PARAMETER)
 
     if (USB_MODE_PERI == g_usb_usbmode[p_ctrl->module_number])
     {
@@ -2484,10 +2613,26 @@ fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint3
     {
   #if ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST)
         p_ctrl->device_address = USB_ADDRESS1;
-  #endif                                                                                                                 /* USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST */
+  #endif                                                                                                                 /* (USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST) */                                                                                                /* USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST */
     }
     FSP_ERROR_RETURN(USB_NULL != (g_usb_open_class[p_ctrl->module_number] & (1 << p_ctrl->type)), FSP_ERR_USB_PARAMETER) /* Check USB Open device class */
- #endif                                                                                                                  /* USB_CFG_PARAM_CHECKING_ENABLE */
+ #endif /* USB_CFG_PARAM_CHECKING_ENABLE */                                                                                                                  /* USB_CFG_PARAM_CHECKING_ENABLE */
+
+ #if (USB_CFG_DMA == USB_CFG_ENABLE)
+    if (USB_IP0 == p_ctrl->module_number)
+    {
+        /* Alignment checking if "p_buf" is 2-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_2_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+
+  #if defined(USB_HIGH_SPEED_MODULE)
+    else
+    {
+        /* Alignment checking if "p_buf" is 4-byte boundary */
+        FSP_ERROR_RETURN((0 == ((uint32_t) p_buf & USB_MASK_ALIGN_4_BYTE)), FSP_ERR_USB_PARAMETER)
+    }
+  #endif                               /* defined(USB_HIGH_SPEED_MODULE) */
+ #endif /* (USB_CFG_DMA == USB_CFG_ENABLE) */
 
     ret_code = R_USB_InfoGet(p_ctrl, &info, p_ctrl->device_address);
     if (USB_STATUS_CONFIGURED == info.device_status)
@@ -2497,13 +2642,13 @@ fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint3
         {
  #if ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST)
   #if (BSP_CFG_RTOS != 0)
-            p_tran_data = (usb_utr_t *) &tran_data;
+            p_tran_data = &tran_data;
   #else                                /* (BSP_CFG_RTOS != 0) */
-            p_tran_data = (usb_utr_t *) &g_usb_hdata[p_ctrl->module_number][p_ctrl->pipe];
+            p_tran_data = &g_usb_hdata[p_ctrl->module_number][p_ctrl->pipe];
   #endif  /* (BSP_CFG_RTOS != 0) */
 
             p_tran_data->ip        = p_ctrl->module_number;
-            p_tran_data->ipp       = usb_hstd_get_usb_ip_adr((uint8_t) p_ctrl->module_number);
+            p_tran_data->ipp       = usb_hstd_get_usb_ip_adr(p_ctrl->module_number);
             p_tran_data->keyword   = p_ctrl->pipe;            /* Pipe No */
             p_tran_data->p_tranadr = p_buf;                   /* Data address */
             p_tran_data->tranlen   = size;                    /* Data Size */
@@ -2549,9 +2694,9 @@ fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint3
         {
  #if ((USB_CFG_MODE & USB_CFG_PERI) == USB_CFG_PERI)
   #if (BSP_CFG_RTOS != 0)
-            p_tran_data = (usb_utr_t *) &tran_data;
+            p_tran_data = &tran_data;
   #else                                                       /* (BSP_CFG_RTOS != 0) */
-            p_tran_data = (usb_utr_t *) &g_usb_pdata[p_ctrl->pipe];
+            p_tran_data = &g_usb_pdata[p_ctrl->pipe];
   #endif  /* (BSP_CFG_RTOS != 0) */
 
             p_tran_data->ip        = p_ctrl->module_number;   /* USB Module Number */
@@ -2597,8 +2742,12 @@ fsp_err_t R_USB_PipeWrite (usb_ctrl_t * const p_api_ctrl, uint8_t * p_buf, uint3
  #endif                                /* (USB_CFG_MODE & USB_CFG_PERI) == USB_CFG_PERI */
         }
     }
+    else
+    {
+        ret_code = FSP_ERR_USB_FAILED;
+    }
     return ret_code;
-#endif  /* #if !defined(USB_CFG_HVND_USE) && !defined(USB_CFG_PVND_USE) */
+#endif                                 /* #if !defined(USB_CFG_HVND_USE) && !defined(USB_CFG_PVND_USE) */
 }
 
 /**************************************************************************//**
@@ -2624,7 +2773,7 @@ fsp_err_t R_USB_PipeStop (usb_ctrl_t * const p_api_ctrl, uint8_t pipe_number)
 #else
     usb_er_t   err      = FSP_ERR_USB_FAILED;
     fsp_err_t  ret_code = FSP_ERR_USB_FAILED;
-    usb_info_t info;
+    usb_info_t info     = {USB_NULL, USB_NULL, USB_NULL, USB_NULL};
     usb_utr_t  utr;
 
  #if USB_CFG_PARAM_CHECKING_ENABLE
@@ -3307,6 +3456,8 @@ fsp_err_t R_USB_ModuleNumberGet (usb_ctrl_t * const p_api_ctrl, uint8_t * module
 fsp_err_t R_USB_ClassTypeGet (usb_ctrl_t * const p_api_ctrl, usb_class_t * class_type)
 {
     usb_instance_ctrl_t * p_ctrl = (usb_instance_ctrl_t *) p_api_ctrl;
+
+    p_ctrl->type = (usb_class_t) (p_ctrl->type | USB_VALUE_80H);
 
     *class_type = p_ctrl->type;
 

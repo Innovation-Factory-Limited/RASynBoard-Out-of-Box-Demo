@@ -77,6 +77,33 @@ SemaphoreHandle_t g_ndp_mutex;
 StaticSemaphore_t g_ndp_mutex_memory;
 #endif
 void rtos_startup_err_callback(void *p_instance, void *p_data);
+SemaphoreHandle_t g_xInitialSemaphore;
+#if 1
+StaticSemaphore_t g_xInitialSemaphore_memory;
+#endif
+void rtos_startup_err_callback(void *p_instance, void *p_data);
+EventGroupHandle_t g_https_extended_msg_event_group;
+#if 1
+StaticEventGroup_t g_https_extended_msg_event_group_memory;
+#endif
+void rtos_startup_err_callback(void *p_instance, void *p_data);
+QueueHandle_t g_telemetry_queue;
+#if 1
+StaticQueue_t g_telemetry_queue_memory;
+uint8_t g_telemetry_queue_queue_memory[8 * 64];
+#endif
+void rtos_startup_err_callback(void *p_instance, void *p_data);
+SemaphoreHandle_t g_sd_mutex;
+#if 1
+StaticSemaphore_t g_sd_mutex_memory;
+#endif
+void rtos_startup_err_callback(void *p_instance, void *p_data);
+QueueHandle_t g_c2d_queue;
+#if 1
+StaticQueue_t g_c2d_queue_memory;
+uint8_t g_c2d_queue_queue_memory[8 * 32];
+#endif
+void rtos_startup_err_callback(void *p_instance, void *p_data);
 void g_common_init(void)
 {
     g_binary_semaphore =
@@ -150,5 +177,77 @@ void g_common_init(void)
     if (NULL == g_ndp_mutex)
     {
         rtos_startup_err_callback (g_ndp_mutex, 0);
+    }
+    g_xInitialSemaphore =
+#if 1
+            xSemaphoreCreateBinaryStatic (&g_xInitialSemaphore_memory);
+#else
+                xSemaphoreCreateBinary();
+                #endif
+    if (NULL == g_xInitialSemaphore)
+    {
+        rtos_startup_err_callback (g_xInitialSemaphore, 0);
+    }
+    g_https_extended_msg_event_group =
+#if 1
+            xEventGroupCreateStatic (&g_https_extended_msg_event_group_memory);
+#else
+                xEventGroupCreate();
+                #endif
+    if (NULL == g_https_extended_msg_event_group)
+    {
+        rtos_startup_err_callback (g_https_extended_msg_event_group, 0);
+    }
+    g_telemetry_queue =
+#if 1
+            xQueueCreateStatic (
+#else
+                xQueueCreate(
+                #endif
+                                64,
+                                8
+#if 1
+                                ,
+                                &g_telemetry_queue_queue_memory[0], &g_telemetry_queue_memory
+#endif
+                                );
+    if (NULL == g_telemetry_queue)
+    {
+        rtos_startup_err_callback (g_telemetry_queue, 0);
+    }
+    g_sd_mutex =
+#if 0
+                #if 1
+                xSemaphoreCreateRecursiveMutexStatic(&g_sd_mutex_memory);
+                #else
+                xSemaphoreCreateRecursiveMutex();
+                #endif
+                #else
+#if 1
+            xSemaphoreCreateMutexStatic (&g_sd_mutex_memory);
+#else
+                xSemaphoreCreateMutex();
+                #endif
+#endif
+    if (NULL == g_sd_mutex)
+    {
+        rtos_startup_err_callback (g_sd_mutex, 0);
+    }
+    g_c2d_queue =
+#if 1
+            xQueueCreateStatic (
+#else
+                xQueueCreate(
+                #endif
+                                32,
+                                8
+#if 1
+                                ,
+                                &g_c2d_queue_queue_memory[0], &g_c2d_queue_memory
+#endif
+                                );
+    if (NULL == g_c2d_queue)
+    {
+        rtos_startup_err_callback (g_c2d_queue, 0);
     }
 }

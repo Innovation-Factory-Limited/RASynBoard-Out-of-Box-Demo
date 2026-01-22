@@ -1,5 +1,113 @@
 /* generated HAL source file - do not edit */
 #include "hal_data.h"
+sci_uart_instance_ctrl_t g_uart5_ctrl;
+
+baud_setting_t g_uart5_baud_setting =
+        {
+        /* Baud rate calculated with 0.469% error. */.semr_baudrate_bits_b.abcse = 0,
+          .semr_baudrate_bits_b.abcs = 0, .semr_baudrate_bits_b.bgdm = 1, .cks = 0, .brr = 53, .mddr = (uint8_t) 256, .semr_baudrate_bits_b.brme =
+                  false };
+
+/** UART extended configuration for UARTonSCI HAL driver */
+const sci_uart_extended_cfg_t g_uart5_cfg_extend =
+{ .clock = SCI_UART_CLOCK_INT, .rx_edge_start = SCI_UART_START_BIT_FALLING_EDGE, .noise_cancel =
+          SCI_UART_NOISE_CANCELLATION_DISABLE,
+  .rx_fifo_trigger = SCI_UART_RX_FIFO_TRIGGER_MAX, .p_baud_setting = &g_uart5_baud_setting, .flow_control =
+          SCI_UART_FLOW_CONTROL_RTS,
+#if 0xFF != 0xFF
+                .flow_control_pin       = BSP_IO_PORT_FF_PIN_0xFF,
+                #else
+  .flow_control_pin = (bsp_io_port_pin_t) UINT16_MAX,
+#endif
+  .rs485_setting =
+  { .enable = SCI_UART_RS485_DISABLE, .polarity = SCI_UART_RS485_DE_POLARITY_HIGH,
+#if 0xFF != 0xFF
+                    .de_control_pin = BSP_IO_PORT_FF_PIN_0xFF,
+                #else
+    .de_control_pin = (bsp_io_port_pin_t) UINT16_MAX,
+#endif
+          }, };
+
+/** UART interface configuration */
+const uart_cfg_t g_uart5_cfg =
+{ .channel = 5, .data_bits = UART_DATA_BITS_8, .parity = UART_PARITY_OFF, .stop_bits = UART_STOP_BITS_1, .p_callback =
+          NULL,
+  .p_context = NULL, .p_extend = &g_uart5_cfg_extend,
+#define RA_NOT_DEFINED (1)
+#if (RA_NOT_DEFINED == RA_NOT_DEFINED)
+  .p_transfer_tx = NULL,
+#else
+                .p_transfer_tx       = &RA_NOT_DEFINED,
+#endif
+#if (RA_NOT_DEFINED == RA_NOT_DEFINED)
+  .p_transfer_rx = NULL,
+#else
+                .p_transfer_rx       = &RA_NOT_DEFINED,
+#endif
+#undef RA_NOT_DEFINED
+  .rxi_ipl = (12),
+  .txi_ipl = (12), .tei_ipl = (12), .eri_ipl = (12),
+#if defined(VECTOR_NUMBER_SCI5_RXI)
+                .rxi_irq             = VECTOR_NUMBER_SCI5_RXI,
+#else
+  .rxi_irq = FSP_INVALID_VECTOR,
+#endif
+#if defined(VECTOR_NUMBER_SCI5_TXI)
+                .txi_irq             = VECTOR_NUMBER_SCI5_TXI,
+#else
+  .txi_irq = FSP_INVALID_VECTOR,
+#endif
+#if defined(VECTOR_NUMBER_SCI5_TEI)
+                .tei_irq             = VECTOR_NUMBER_SCI5_TEI,
+#else
+  .tei_irq = FSP_INVALID_VECTOR,
+#endif
+#if defined(VECTOR_NUMBER_SCI5_ERI)
+                .eri_irq             = VECTOR_NUMBER_SCI5_ERI,
+#else
+  .eri_irq = FSP_INVALID_VECTOR,
+#endif
+        };
+
+/* Instance structure to use this module. */
+const uart_instance_t g_uart5 =
+{ .p_ctrl = &g_uart5_ctrl, .p_cfg = &g_uart5_cfg, .p_api = &g_uart_on_sci };
+lpm_instance_ctrl_t g_lpm1_ctrl;
+
+const lpm_cfg_t g_lpm1_cfg =
+{ .low_power_mode = LPM_MODE_STANDBY, .standby_wake_sources = LPM_STANDBY_WAKE_SOURCE_IRQ5
+        | (lpm_standby_wake_source_t) 0,
+#if BSP_FEATURE_LPM_HAS_SNOOZE
+    .snooze_cancel_sources      = LPM_SNOOZE_CANCEL_SOURCE_NONE,
+    .snooze_request_source      = LPM_SNOOZE_REQUEST_RXD0_FALLING,
+    .snooze_end_sources         =  (lpm_snooze_end_t) 0,
+    .dtc_state_in_snooze        = LPM_SNOOZE_DTC_DISABLE,
+#endif
+#if BSP_FEATURE_LPM_HAS_SBYCR_OPE
+    .output_port_enable         = LPM_OUTPUT_PORT_ENABLE_RETAIN,
+#endif
+#if BSP_FEATURE_LPM_HAS_DEEP_STANDBY
+    .io_port_state              = LPM_IO_PORT_NO_CHANGE,
+    .power_supply_state         = LPM_POWER_SUPPLY_DEEPCUT0,
+    .deep_standby_cancel_source =  (lpm_deep_standby_cancel_source_t) 0,
+    .deep_standby_cancel_edge   =  (lpm_deep_standby_cancel_edge_t) 0,
+#endif
+#if BSP_FEATURE_LPM_HAS_PDRAMSCR
+    .ram_retention_cfg.ram_retention = (uint8_t) ( 0),
+    .ram_retention_cfg.tcm_retention = false,
+#endif
+#if BSP_FEATURE_LPM_HAS_DPSBYCR_SRKEEP
+    .ram_retention_cfg.standby_ram_retention = false,
+#endif
+#if BSP_FEATURE_LPM_HAS_LDO_CONTROL
+    .ldo_standby_cfg.pll1_ldo = false,
+    .ldo_standby_cfg.pll2_ldo = false,
+    .ldo_standby_cfg.hoco_ldo = false,
+#endif
+  .p_extend = NULL, };
+
+const lpm_instance_t g_lpm1 =
+{ .p_api = &g_lpm_on_lpm, .p_ctrl = &g_lpm1_ctrl, .p_cfg = &g_lpm1_cfg };
 
 dmac_instance_ctrl_t g_transfer1_ctrl;
 transfer_info_t g_transfer1_info =
@@ -142,12 +250,14 @@ const usb_instance_t g_basic =
 lpm_instance_ctrl_t g_lpm0_ctrl;
 
 const lpm_cfg_t g_lpm0_cfg =
-{ .low_power_mode = LPM_MODE_STANDBY,
-  .snooze_cancel_sources = LPM_SNOOZE_CANCEL_SOURCE_NONE,
-  .standby_wake_sources = LPM_STANDBY_WAKE_SOURCE_IRQ5 | LPM_STANDBY_WAKE_SOURCE_IRQ13 | (lpm_standby_wake_source_t) 0,
-  .snooze_request_source = LPM_SNOOZE_REQUEST_RXD0_FALLING,
-  .snooze_end_sources = (lpm_snooze_end_t) 0,
-  .dtc_state_in_snooze = LPM_SNOOZE_DTC_DISABLE,
+{ .low_power_mode = LPM_MODE_STANDBY, .standby_wake_sources = LPM_STANDBY_WAKE_SOURCE_IRQ5
+        | LPM_STANDBY_WAKE_SOURCE_IRQ13 | (lpm_standby_wake_source_t) 0,
+#if BSP_FEATURE_LPM_HAS_SNOOZE
+    .snooze_cancel_sources      = LPM_SNOOZE_CANCEL_SOURCE_NONE,
+    .snooze_request_source      = LPM_SNOOZE_REQUEST_RXD0_FALLING,
+    .snooze_end_sources         =  (lpm_snooze_end_t) 0,
+    .dtc_state_in_snooze        = LPM_SNOOZE_DTC_DISABLE,
+#endif
 #if BSP_FEATURE_LPM_HAS_SBYCR_OPE
     .output_port_enable         = LPM_OUTPUT_PORT_ENABLE_RETAIN,
 #endif
@@ -156,6 +266,18 @@ const lpm_cfg_t g_lpm0_cfg =
     .power_supply_state         = LPM_POWER_SUPPLY_DEEPCUT0,
     .deep_standby_cancel_source =  (lpm_deep_standby_cancel_source_t) 0,
     .deep_standby_cancel_edge   =  (lpm_deep_standby_cancel_edge_t) 0,
+#endif
+#if BSP_FEATURE_LPM_HAS_PDRAMSCR
+    .ram_retention_cfg.ram_retention = (uint8_t) ( 0),
+    .ram_retention_cfg.tcm_retention = false,
+#endif
+#if BSP_FEATURE_LPM_HAS_DPSBYCR_SRKEEP
+    .ram_retention_cfg.standby_ram_retention = false,
+#endif
+#if BSP_FEATURE_LPM_HAS_LDO_CONTROL
+    .ldo_standby_cfg.pll1_ldo = false,
+    .ldo_standby_cfg.pll2_ldo = false,
+    .ldo_standby_cfg.hoco_ldo = false,
 #endif
   .p_extend = NULL, };
 
@@ -191,8 +313,8 @@ const sci_uart_extended_cfg_t g_uart3_cfg_extend =
 
 /** UART interface configuration */
 const uart_cfg_t g_uart3_cfg =
-{ .channel = 3, .data_bits = UART_DATA_BITS_8, .parity = UART_PARITY_OFF, .stop_bits = UART_STOP_BITS_1, .p_callback =
-          ble_uart_callback,
+{ .channel = 9, .data_bits = UART_DATA_BITS_8, .parity = UART_PARITY_OFF, .stop_bits = UART_STOP_BITS_1, .p_callback =
+          rm_atcmd_uart_callback,
   .p_context = NULL, .p_extend = &g_uart3_cfg_extend,
 #define RA_NOT_DEFINED (1)
 #if (RA_NOT_DEFINED == RA_NOT_DEFINED)
@@ -208,23 +330,23 @@ const uart_cfg_t g_uart3_cfg =
 #undef RA_NOT_DEFINED
   .rxi_ipl = (3),
   .txi_ipl = (3), .tei_ipl = (3), .eri_ipl = (3),
-#if defined(VECTOR_NUMBER_SCI3_RXI)
-                .rxi_irq             = VECTOR_NUMBER_SCI3_RXI,
+#if defined(VECTOR_NUMBER_SCI9_RXI)
+                .rxi_irq             = VECTOR_NUMBER_SCI9_RXI,
 #else
   .rxi_irq = FSP_INVALID_VECTOR,
 #endif
-#if defined(VECTOR_NUMBER_SCI3_TXI)
-                .txi_irq             = VECTOR_NUMBER_SCI3_TXI,
+#if defined(VECTOR_NUMBER_SCI9_TXI)
+                .txi_irq             = VECTOR_NUMBER_SCI9_TXI,
 #else
   .txi_irq = FSP_INVALID_VECTOR,
 #endif
-#if defined(VECTOR_NUMBER_SCI3_TEI)
-                .tei_irq             = VECTOR_NUMBER_SCI3_TEI,
+#if defined(VECTOR_NUMBER_SCI9_TEI)
+                .tei_irq             = VECTOR_NUMBER_SCI9_TEI,
 #else
   .tei_irq = FSP_INVALID_VECTOR,
 #endif
-#if defined(VECTOR_NUMBER_SCI3_ERI)
-                .eri_irq             = VECTOR_NUMBER_SCI3_ERI,
+#if defined(VECTOR_NUMBER_SCI9_ERI)
+                .eri_irq             = VECTOR_NUMBER_SCI9_ERI,
 #else
   .eri_irq = FSP_INVALID_VECTOR,
 #endif

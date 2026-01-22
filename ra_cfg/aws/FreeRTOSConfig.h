@@ -48,7 +48,7 @@ FSP_HEADER
 #define configMAX_PRIORITIES (5)
 #endif
 #ifndef configMINIMAL_STACK_SIZE
-#define configMINIMAL_STACK_SIZE (128)
+#define configMINIMAL_STACK_SIZE (1024)
 #endif
 #ifndef configMINIMAL_SECURE_STACK_SIZE
 #define configMINIMAL_SECURE_STACK_SIZE (256U)  /* Unused in RA port. */
@@ -75,7 +75,7 @@ FSP_HEADER
 #define configUSE_MUTEXES (1)
 #endif
 #ifndef configUSE_RECURSIVE_MUTEXES
-#define configUSE_RECURSIVE_MUTEXES (0)
+#define configUSE_RECURSIVE_MUTEXES (1)
 #endif
 #ifndef configUSE_COUNTING_SEMAPHORES
 #define configUSE_COUNTING_SEMAPHORES (1)

@@ -1,5 +1,5 @@
 /***********************************************************************************************************************
- * Copyright [2020-2022] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
+ * Copyright [2020-2023] Renesas Electronics Corporation and/or its affiliates.  All Rights Reserved.
  *
  * This software and documentation are supplied by Renesas Electronics America Inc. and may only be used with products
  * of Renesas Electronics Corp. and its affiliates ("Renesas").  No other uses are authorized.  Renesas products are
@@ -133,6 +133,15 @@ volatile uint8_t g_usb_otg_chattering_counter = 0;
 volatile uint8_t g_usb_otg_hnp_counter        = 0;
 #endif                                 /* defined(USB_CFG_OTG_USE) */
 
+#if ((USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST)
+static uint16_t g_usb_hstd_m0_reg_intenb0;
+static uint16_t g_usb_hstd_m0_reg_intenb1;
+ #if defined(USB_HIGH_SPEED_MODULE)
+static uint16_t g_usb_hstd_m1_reg_intenb0;
+static uint16_t g_usb_hstd_m1_reg_intenb1;
+ #endif                                /* defined(USB_HIGH_SPEED_MODULE) */
+#endif                                 /* (USB_CFG_MODE & USB_CFG_HOST) == USB_CFG_HOST */
+
 /******************************************************************************
  * Renesas Abstracted RSK functions
  ******************************************************************************/
@@ -220,13 +229,13 @@ fsp_err_t usb_module_register_clear (uint8_t usb_ip)
         USB_M0->BEMPENB     = 0;
         USB_M0->INTENB0     = 0;
         USB_M0->INTENB1     = 0;
-        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DPRPU));
-        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DRPD));
-        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_USBE));
-        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DCFM));
         USB_M0->BRDYSTS     = 0;
         USB_M0->NRDYSTS     = 0;
         USB_M0->BEMPSTS     = 0;
+        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DPRPU));
+        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DRPD));
+        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_DCFM));
+        USB_M0->SYSCFG      = (uint16_t) (USB_M0->SYSCFG & (~USB_USBE));
 #endif                                 /* defined(USB_CFG_OTG_USE) */
     }
     else
@@ -268,13 +277,14 @@ fsp_err_t usb_module_register_clear (uint8_t usb_ip)
         USB_M1->BEMPENB     = 0;
         USB_M1->INTENB0     = 0;
         USB_M1->INTENB1     = 0;
-        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DPRPU));
-        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DRPD));
-        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_USBE));
-        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DCFM));
         USB_M1->BRDYSTS     = 0;
         USB_M1->NRDYSTS     = 0;
         USB_M1->BEMPSTS     = 0;
+        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DPRPU));
+        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DRPD));
+        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_DCFM));
+        USB_M1->SYSCFG      = (uint16_t) (USB_M1->SYSCFG & (~USB_USBE));
+        USB_M1->LPSTS       = 0;
 #endif                                 /* defined(USB_CFG_OTG_USE) */
     }
 
@@ -480,6 +490,9 @@ void usb_cpu_int_enable (void)
         if (USB_MODE_HOST == g_p_usb_cfg_ip0->usb_mode)
         {
             R_BSP_IrqCfgEnable(g_p_usb_cfg_ip0->irq, g_p_usb_cfg_ip0->ipl, g_p_usb_cfg_ip0); /* USBI enable */
+
+            USB_M0->INTENB0 = g_usb_hstd_m0_reg_intenb0;
+            USB_M0->INTENB1 = g_usb_hstd_m0_reg_intenb1;
         }
     }
 
@@ -500,9 +513,12 @@ void usb_cpu_int_enable (void)
         if (USB_MODE_HOST == g_p_usb_cfg_ip1->usb_mode)
         {
             R_BSP_IrqCfgEnable(g_p_usb_cfg_ip1->hsirq, g_p_usb_cfg_ip1->hsipl, g_p_usb_cfg_ip1); /* USBIR enable */
+
+            USB_M1->INTENB0 = g_usb_hstd_m1_reg_intenb0;
+            USB_M1->INTENB1 = g_usb_hstd_m1_reg_intenb1;
         }
     }
- #endif /* defined (USB_HIGH_SPEED_MODULE) */
+ #endif                                /* defined (USB_HIGH_SPEED_MODULE) */
 }
 
 /******************************************************************************
@@ -531,6 +547,11 @@ void usb_cpu_int_disable (void)
     {
         if (USB_MODE_HOST == g_p_usb_cfg_ip0->usb_mode)
         {
+            g_usb_hstd_m0_reg_intenb0 = USB_M0->INTENB0;
+            g_usb_hstd_m0_reg_intenb1 = USB_M0->INTENB1;
+            USB_M0->INTENB0           = 0;
+            USB_M0->INTENB1           = 0;
+
             R_BSP_IrqDisable(g_p_usb_cfg_ip0->irq); /* USBI enable */
         }
     }
@@ -551,6 +572,11 @@ void usb_cpu_int_disable (void)
     {
         if (USB_MODE_HOST == g_p_usb_cfg_ip1->usb_mode)
         {
+            g_usb_hstd_m1_reg_intenb0 = USB_M1->INTENB0;
+            g_usb_hstd_m1_reg_intenb1 = USB_M1->INTENB1;
+            USB_M1->INTENB0           = 0;
+            USB_M1->INTENB1           = 0;
+
             R_BSP_IrqDisable(g_p_usb_cfg_ip1->hsirq); /* USBIR enable */
         }
     }
@@ -1017,6 +1043,9 @@ IRQn_Type g_otg_usb_fs_irq;
 
 void usbfs_interrupt_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 #if defined(USB_CFG_OTG_USE)
@@ -1024,10 +1053,16 @@ void usbfs_interrupt_handler (void)
 #endif                                 /* defined(USB_CFG_OTG_USE) */
 
     usbfs_usbi_isr();
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbfs_resume_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
@@ -1037,40 +1072,64 @@ void usbfs_resume_handler (void)
     p_cfg = (usb_cfg_t *) R_FSP_IsrContextGet(irq);
     usb_cpu_usb_int_hand_isr(p_cfg->module_number);
 #endif                                 /* ((USB_CFG_MODE & USB_CFG_PERI) == USB_CFG_PERI) */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbfs_d0fifo_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
 #if USB_CFG_DTC == USB_CFG_ENABLE
     usb_cpu_d0fifo_int_hand();
 #endif                                 /* USB_CFG_DTC == USB_CFG_ENABLE */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbfs_d1fifo_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
 #if USB_CFG_DTC == USB_CFG_ENABLE
     usb_cpu_d1fifo_int_hand();
 #endif                                 /* USB_CFG_DTC == USB_CFG_ENABLE */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbhs_interrupt_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
 #if defined(USB_HIGH_SPEED_MODULE)
     usbhs_usbir_isr();
 #endif                                 /* defined  (USB_HIGH_SPEED_MODULE) */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbhs_d0fifo_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
@@ -1079,10 +1138,16 @@ void usbhs_d0fifo_handler (void)
     usb2_cpu_d0fifo_int_hand();
  #endif                                /* defined (USB_HIGH_SPEED_MODULE) */
 #endif                                 /* USB_CFG_DTC == USB_CFG_ENABLE */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 void usbhs_d1fifo_handler (void)
 {
+    /* Save context if RTOS is used */
+    FSP_CONTEXT_SAVE
+
     IRQn_Type irq = R_FSP_CurrentIrqGet();
     R_BSP_IrqStatusClear(irq);
 
@@ -1091,6 +1156,9 @@ void usbhs_d1fifo_handler (void)
     usb2_cpu_d1fifo_int_hand();
  #endif                                /* defined (USB_HIGH_SPEED_MODULE) */
 #endif                                 /* USB_CFG_DTC == USB_CFG_ENABLE */
+
+    /* Restore context if RTOS is used */
+    FSP_CONTEXT_RESTORE
 }
 
 /******************************************************************************

@@ -7,7 +7,7 @@
 FSP_HEADER
 
 #define LED_R (BSP_IO_PORT_00_PIN_01) /* red led */
-#define RP2040_SIGNAL (BSP_IO_PORT_00_PIN_02) /* RP2040 wake signal */
+#define RP2040_SIGNAL (BSP_IO_PORT_00_PIN_02)
 #define CS_NDP (BSP_IO_PORT_01_PIN_03) /* SPI_NDP_CS */
 #define CS_SD (BSP_IO_PORT_01_PIN_04) /* SPI_uSD_CS */
 #define DA16600_RstPin (BSP_IO_PORT_01_PIN_06) /* WLBT_RST */

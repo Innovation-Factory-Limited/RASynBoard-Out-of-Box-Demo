@@ -11,6 +11,10 @@ extern void system_cmd_thread_create(void);
 extern TaskHandle_t system_cmd_thread;
 extern void ndp_record_thread_create(void);
 extern TaskHandle_t ndp_record_thread;
+extern void iotc_thread_create(void);
+extern TaskHandle_t iotc_thread;
+extern void c2d_thread_create(void);
+extern TaskHandle_t c2d_thread;
 uint32_t g_fsp_common_thread_count;
 bool g_fsp_common_initialized;
 SemaphoreHandle_t g_fsp_common_initialized_semaphore;
@@ -112,6 +116,8 @@ int main(void)
     ndp_thread_create ();
     system_cmd_thread_create ();
     ndp_record_thread_create ();
+    iotc_thread_create ();
+    c2d_thread_create ();
 
     /* Start the scheduler. */
     vTaskStartScheduler ();
