@@ -6,8 +6,11 @@ This guide provides step-by-step instructions for configuring the Renesas FSP (F
 
 The following hardware resources need to be configured:
 1. **GPIO P002** - Output signal to RP2040 power management HAT
-2. **UART9 (SCI9)** - Communication with Raspberry Pi 5
+2. **SCI4 (UART4)** - Communication with Raspberry Pi 5 (already configured in FSP)
 3. **LPM (Low Power Mode)** - Standby mode with IRQ wake capability
+
+**Note:** SCI4 (P205/P206) is already configured as `g_uart4` in FSP for debug console.
+We repurpose it for Pi5 communication by redirecting debug to USB-VCOM.
 
 ## Prerequisites
 
@@ -55,54 +58,50 @@ The FSP configurator will automatically add the following to `ra_cfg/fsp_cfg/bsp
 
 ---
 
-## Part 2: Configure UART9 for Pi5 Communication
+## Part 2: Pi5 Communication via SCI4 (Already Configured)
 
-### Step 1: Add UART9 Stack
+**IMPORTANT:** SCI4 is already configured in FSP as `g_uart4`. No additional FSP configuration is needed!
 
-1. In the FSP Configuration perspective, click on the **Stacks** tab
-2. Click **New Stack** button
-3. Select **Connectivity** → **UART (r_sci_uart)**
-4. Click **Add**
+### Existing Configuration
 
-### Step 2: Configure UART9 Instance
-
-1. Select the newly added UART stack
-2. In the **Properties** panel, configure:
-
-#### Common Settings
-- **Name**: `g_uart9`
-- **Channel**: `9` (SCI9)
-- **Callback**: `pi5_uart_callback`
-- **Transmit/Receive Interrupt Priority**: `Priority 3` (or appropriate)
-
-#### Communication Settings
+SCI4 is pre-configured for debug console with the following settings:
+- **Name**: `g_uart4`
+- **Channel**: `4` (SCI4)
+- **Pins**: P205 (TXD4), P206 (RXD4)
 - **Baud Rate**: `115200`
-- **Data Bits**: `8 bits`
-- **Parity**: `No Parity`
-- **Stop Bits**: `1 bit`
-- **Flow Control**: `None`
+- **Callback**: `console_callback`
 
-### Step 3: Configure UART9 Pins
+### Repurposing SCI4 for Pi5 Communication
 
-1. Return to the **Pins** tab
-2. Locate **P109** and configure:
-   - **Symbolic Name**: `UART9_TXD` (or leave as default TxD9)
-   - **Mode**: `Peripheral mode (TxD9)`
-   - **Function**: `TxD9_SCK9_MISO9_SCL9`
+To use SCI4 for Pi5 communication instead of debug console:
 
-3. Locate **P110** and configure:
-   - **Symbolic Name**: `UART9_RXD` (or leave as default RxD9)
-   - **Mode**: `Peripheral mode (RxD9)`
-   - **Function**: `RxD9_MISO9_SDA9`
+1. **Redirect debug output to USB-VCOM**:
+   Edit `config.ini` on the SD card:
+   ```ini
+   [Debug Print]
+   Port=2    # 1=UART, 2=USB-VCOM
+   ```
 
-### Step 4: Verify UART Configuration
+2. **Hardware Connection via J8 Pmod Connector**:
+   | J8 Pin | Signal | Connect To |
+   |--------|--------|------------|
+   | Pin 3 | P205 (TXD4) | Pi5 RXD (GPIO15) |
+   | Pin 4 | P206 (RXD4) | Pi5 TXD (GPIO14) |
+   | Pin 5 | GND | Pi5 GND |
 
-After configuration, you should see in `ra_gen/hal_data.h`:
+### Why Not UART9 (SCI9)?
+
+SCI9 (P109/P110) is already used by the DA16600 WiFi module for AT commands.
+The existing `g_uart3` instance uses channel 9 with `rm_atcmd_uart_callback`.
+
+### Verify Existing UART4 Configuration
+
+The existing configuration in `ra_gen/hal_data.h` shows:
 
 ```c
-extern const uart_instance_t g_uart9;
-extern uart_ctrl_t g_uart9_ctrl;
-extern const uart_cfg_t g_uart9_cfg;
+extern const uart_instance_t g_uart4;
+extern sci_uart_instance_ctrl_t g_uart4_ctrl;
+extern const uart_cfg_t g_uart4_cfg;
 ```
 
 ---
@@ -164,45 +163,30 @@ Check that the following files have been updated:
 
 ---
 
-## Part 5: Uncomment UART Code in pi5_uart_comm.c
+## Part 5: UART Code Status
 
-After FSP configuration is complete, you need to enable the UART code:
+The Pi5 UART communication code in `src/pi5_uart_comm.c` is now **fully enabled** and uses the existing `g_uart4` (SCI4) instance.
 
-### Step 1: Open pi5_uart_comm.c
+### No Code Changes Required
 
-Located in: `src/pi5_uart_comm.c`
+The UART code has been updated to:
+- Use `g_uart4_ctrl` and `g_uart4_cfg` (existing FSP configuration)
+- Handle the case where UART4 may already be open (shared with console)
+- Include proper timeout handling for transmit operations
 
-### Step 2: Uncomment UART Code
+### Key Functions
 
-Find and uncomment the following sections:
+- `pi5_uart_init()` - Opens/reuses UART4, starts receiving
+- `pi5_uart_check_ready()` - Checks for Pi5 ready signal (0xA5)
+- `pi5_uart_send_audio_buffer()` - Sends audio data to Pi5
 
-#### In `pi5_uart_init()`:
-```c
-// Uncomment this block:
-err = R_SCI_UART_Open(&g_uart9_ctrl, &g_uart9_cfg);
-if (FSP_SUCCESS != err) {
-    printf("ERROR: UART9 open failed: %d\n", err);
-    return;
-}
+### Configuration Requirement
 
-// Start receiving for Pi5 ready signal
-R_SCI_UART_Read(&g_uart9_ctrl, rx_buffer, 1);
+**Important:** Update `config.ini` on the SD card:
+```ini
+[Debug Print]
+Port=2    # Redirect debug to USB-VCOM, freeing SCI4 for Pi5
 ```
-
-#### In `pi5_uart_check_ready()`:
-```c
-// Uncomment this block:
-R_SCI_UART_Write(&g_uart9_ctrl, &ack, 1);
-while (!uart_tx_complete) {
-    vTaskDelay(1);
-}
-
-// And:
-R_SCI_UART_Read(&g_uart9_ctrl, rx_buffer, 1);
-```
-
-#### In `pi5_uart_send_audio_buffer()`:
-Uncomment all `R_SCI_UART_Write()` calls (there are multiple instances)
 
 ---
 
@@ -218,11 +202,13 @@ Uncomment all `R_SCI_UART_Write()` calls (there are multiple instances)
 
 Use the **Pin List** view in FSP to verify:
 
-| Pin | Function | Symbolic Name | Direction |
-|-----|----------|--------------|-----------|
+| Pin | Function | Usage | Direction |
+|-----|----------|-------|-----------|
 | P002 | GPIO | RP2040_SIGNAL | Output (Low) |
-| P109 | TxD9 | UART9_TXD | Output |
-| P110 | RxD9 | UART9_RXD | Input |
+| P205 | TxD4 | Pi5 Communication (via J8) | Output |
+| P206 | RxD4 | Pi5 Communication (via J8) | Input |
+
+**Note:** P109/P110 (SCI9) are used by DA16600 WiFi - do not modify.
 
 ### Step 3: Test GPIO Output
 
@@ -240,13 +226,21 @@ Expected: 100ms HIGH pulse (3.3V) on P002
 
 ## Troubleshooting
 
-### Issue: UART9 not available in channel selection
+### Issue: No data on Pi5 UART
 
-**Solution**: Verify that SCI9 is not already allocated to another peripheral. Check the **Resource Usage** tab in FSP.
+**Solutions**:
+1. Verify `config.ini` has `Port=2` to free SCI4 from debug console
+2. Check wiring: J8 Pin3 (TX) → Pi5 RX, J8 Pin4 (RX) → Pi5 TX
+3. Verify Pi5 UART is configured for 115200 baud, 8N1
+4. Check ground connection between boards
+
+### Issue: Debug output missing after changing Port=2
+
+**Solution**: Connect USB cable to Core Board USB-C connector for USB-VCOM debug output.
 
 ### Issue: Pin configuration conflicts
 
-**Solution**: Ensure P002, P109, P110 are not already assigned. Remove any conflicting assignments in the Pins tab.
+**Solution**: P002 should be configured as GPIO output. P205/P206 are already configured for SCI4.
 
 ### Issue: Compilation errors after code generation
 
@@ -290,13 +284,13 @@ To increase transfer speed (optional):
 
 Before proceeding with integration:
 
-- [ ] P002 configured as GPIO output (RP2040_SIGNAL)
-- [ ] UART9 configured with P109/P110, 115200 baud
-- [ ] LPM configured with Standby mode
-- [ ] IRQ5 enabled as wake source
-- [ ] FSP code generated successfully
+- [x] P002 configured as GPIO output (RP2040_SIGNAL) - **Already done**
+- [x] SCI4 (g_uart4) available on P205/P206 - **Already configured in FSP**
+- [x] LPM configured with Standby mode - **Already configured (g_lpm0, g_lpm1)**
+- [x] IRQ5 enabled as wake source - **Already configured**
+- [ ] config.ini updated with `Port=2` for USB-VCOM debug
 - [ ] Project builds without errors
-- [ ] UART code uncommented in pi5_uart_comm.c
+- [ ] Hardware wiring: J8 Pin3→Pi5 RX, J8 Pin4→Pi5 TX, J8 Pin5→GND
 - [ ] GPIO test successful (optional)
 
 ---

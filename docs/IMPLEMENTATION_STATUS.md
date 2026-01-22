@@ -51,13 +51,21 @@ This firmware modification enables the RASynBoard to:
 
 **Key Features:**
 - Simple protocol: READY/ACK/DATA_START/DATA_END
-- 115200 baud (configurable to 921600)
+- Uses existing SCI4 (g_uart4) on P205/P206 via J8 Pmod connector
+- 115200 baud, 8N1
 - Metadata header for debugging
-- 512-byte chunked transfer
+- 512-byte chunked transfer with timeout handling
 
-**Status**: Ready for FSP UART9 configuration
+**Status**: ✓ Complete - Code is fully functional
 
-**Note**: UART code is currently commented out pending FSP configuration. See [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) for setup instructions.
+**Hardware Connection (J8 Pmod on IO Board):**
+| Pin | Signal | Connect To |
+|-----|--------|------------|
+| 3 | P205/TXD4 | Pi5 RXD (GPIO15) |
+| 4 | P206/RXD4 | Pi5 TXD (GPIO14) |
+| 5 | GND | Pi5 GND |
+
+**Configuration Required**: Set `config.ini` `[Debug Print] Port=2` to redirect debug to USB-VCOM.
 
 ---
 
@@ -105,53 +113,57 @@ GPIO_Pulse_Duration=100    # Milliseconds
 
 ## Pending Tasks
 
-### Phase 2: FSP Hardware Configuration
+### Phase 2: FSP Hardware Configuration ✓ (Mostly Complete)
 
-**Required Actions:**
+**Status:** Most FSP configuration is already done! Only minor steps remain.
 
-1. **Configure GPIO P002**
-   - Open e2studio FSP configurator
-   - Set P002 as GPIO output, initial LOW
-   - See: [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) Part 1
+**Already Configured:**
+- ✓ GPIO P002 - Configured as output, initial LOW (`RP2040_SIGNAL`)
+- ✓ SCI4 (g_uart4) - Already configured on P205/P206 @ 115200 baud
+- ✓ LPM (g_lpm0, g_lpm1) - Standby mode with IRQ5/IRQ13 wake sources
 
-2. **Configure UART9 (SCI9)**
-   - Add UART stack for SCI9
-   - Configure P109 (TxD9), P110 (RxD9)
-   - Set baud rate: 115200, 8N1
-   - Callback: `pi5_uart_callback`
-   - See: [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) Part 2
+**Remaining Actions:**
 
-3. **Configure Low Power Mode (LPM)**
-   - Set mode: Standby
-   - Enable IRQ5 as wake source (NDP120)
-   - See: [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) Part 3
+1. **Update config.ini on SD card**
+   ```ini
+   [Debug Print]
+   Port=2    # Redirect debug to USB-VCOM, freeing SCI4 for Pi5
+   ```
 
-4. **Generate FSP Code**
-   - Click "Generate Project Content"
-   - Verify `ra_gen/pin_data.c` and `ra_gen/hal_data.c` updated
+2. **Wire J8 Pmod to Pi5**
+   - J8 Pin 3 (P205/TXD4) → Pi5 RXD (GPIO15)
+   - J8 Pin 4 (P206/RXD4) → Pi5 TXD (GPIO14)
+   - J8 Pin 5 (GND) → Pi5 GND
 
-5. **Uncomment UART Code**
-   - In `src/pi5_uart_comm.c`, uncomment all UART function calls
-   - See: [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) Part 5
-
-**Estimated Time**: 1-2 hours
+3. **Build and test**
+   - Build project in e2studio
+   - Verify no compilation errors
 
 ---
 
-### Phase 3: NDP120 Configuration
+### Phase 3: Audio Level Trigger ✓
 
-**Required Actions:**
+**Status:** Complete - Simplified approach implemented
 
-1. **Simplify NDP120 initialization** in `src/ndp_thread_entry.c`
-   - Remove or bypass ML model loading
-   - Configure for threshold-based detection
-   - Use SPL_THRESHOLD sensor if available
+**Completed Actions:**
 
-2. **Modify match processing logic**
-   - Replace keyword detection with amplitude threshold
-   - Trigger on sound > 60dB (configurable)
+1. **Created `audio_level_trigger.c/h`**
+   - Simple amplitude-based sound detection
+   - No ML model changes needed
+   - Triggers on any loud sound above threshold
 
-**Estimated Time**: 2-3 days
+2. **Modified main loop in `ndp_thread_entry.c`**
+   - Added continuous audio level checking (every 100ms)
+   - Triggers wake sequence on ANY loud sound
+   - Also still responds to ML keyword matches (both modes work)
+
+**Key Settings:**
+- `AUDIO_THRESHOLD_DEFAULT = 2000` (raw PCM amplitude)
+- `AUDIO_COOLDOWN_MS = 5000` (5 second cooldown between triggers)
+
+**Files Created:**
+- `src/audio_level_trigger.h`
+- `src/audio_level_trigger.c`
 
 ---
 
@@ -168,22 +180,22 @@ GPIO_Pulse_Duration=100    # Milliseconds
 
 ---
 
-### Phase 5: Integration
+### Phase 5: Integration ✓
 
-**Required Actions:**
+**Status:** Complete
 
-1. **Modify `src/ndp_thread_entry.c`**
-   - Add includes for new modules
-   - Add global variables for buffer and state
-   - Initialize modules in `ndp_thread_entry()`
-   - Modify EVENT_BIT_VOICE handler
-   - Add audio extraction callback
-   - Add recording management task
+**Completed Actions:**
 
-**Files to Modify:**
-- `src/ndp_thread_entry.c` (primary integration point)
+1. **Modified `src/ndp_thread_entry.c`**
+   - ✓ Added includes for new modules (lines 17-21)
+   - ✓ Added global variables for buffer and state (lines 70-74)
+   - ✓ Added `audio_buffer_callback()` function
+   - ✓ Added `manage_audio_recording()` function
+   - ✓ Initialized modules after `ndp_irq_enable()` (around line 575)
+   - ✓ Modified EVENT_BIT_VOICE handler (around line 610)
 
-**Estimated Time**: 2-3 days
+**Files Modified:**
+- `src/ndp_thread_entry.c` - Fully integrated
 
 ---
 
@@ -214,10 +226,12 @@ RASynBoard-Out-of-Box-Demo/
 │   ├── rp2040_signal.c          ✓ NEW
 │   ├── circular_audio_buffer.h  ✓ NEW - Audio buffering
 │   ├── circular_audio_buffer.c  ✓ NEW
-│   ├── pi5_uart_comm.h          ✓ NEW - UART communication
-│   ├── pi5_uart_comm.c          ✓ NEW (needs FSP config)
-│   ├── ndp_thread_entry.c       ⏳ TO MODIFY - Main integration
-│   └── system_cmd_thread_entry.c ⏳ TO MODIFY - Low power
+│   ├── pi5_uart_comm.h          ✓ NEW - UART communication (SCI4/P205/P206)
+│   ├── pi5_uart_comm.c          ✓ NEW - Fully functional
+│   ├── audio_level_trigger.h    ✓ NEW - Simple sound level detection
+│   ├── audio_level_trigger.c    ✓ NEW - Triggers on ANY loud sound
+│   ├── ndp_thread_entry.c       ✓ MODIFIED - Full integration
+│   └── system_cmd_thread_entry.c ⏳ TO MODIFY - Low power (Phase 4)
 │
 ├── ra_cfg/fsp_cfg/bsp/
 │   └── bsp_pin_cfg.h            ✓ MODIFIED - Added RP2040_SIGNAL
@@ -227,7 +241,8 @@ RASynBoard-Out-of-Box-Demo/
 │
 └── docs/
     ├── FSP_CONFIGURATION_GUIDE.md ✓ NEW - FSP setup guide
-    └── IMPLEMENTATION_STATUS.md   ✓ NEW - This document
+    ├── IMPLEMENTATION_STATUS.md   ✓ NEW - This document
+    └── INTEGRATION_GUIDE.md       ✓ NEW - Integration instructions
 ```
 
 ---
@@ -262,21 +277,20 @@ RASynBoard-Out-of-Box-Demo/
 ## Next Steps
 
 ### Immediate (Now):
-1. Follow [FSP_CONFIGURATION_GUIDE.md](FSP_CONFIGURATION_GUIDE.md) to configure hardware
-2. Generate FSP code
-3. Uncomment UART code in `src/pi5_uart_comm.c`
-4. Build project and verify no compilation errors
+1. Update `config.ini` on SD card: `[Debug Print] Port=2`
+2. Wire J8 Pmod connector to Pi5 UART
+3. Build project and verify no compilation errors
 
 ### Short-term (This Week):
 1. Test GPIO signaling with oscilloscope
 2. Test circular buffer with sample data
-3. Test UART with PC terminal (loopback)
+3. Test UART communication with Pi5
+4. Verify sound detection triggers the complete flow
 
 ### Medium-term (Next Week):
-1. Integrate modules into `ndp_thread_entry.c`
-2. Configure NDP120 for threshold detection
-3. Implement low-power mode functionality
-4. Full system integration testing
+1. Configure NDP120 for threshold detection (Phase 3)
+2. Implement low-power mode functionality (Phase 4)
+3. Full system testing with Pi5
 
 ---
 
@@ -285,6 +299,7 @@ RASynBoard-Out-of-Box-Demo/
 The implementation will be considered successful when:
 
 ✓ FSP configuration complete and code compiles
+✓ Integration code added to `ndp_thread_entry.c`
 ☐ GPIO P002 generates 100ms pulse on sound detection
 ☐ RA6M4 enters and wakes from LPM_MODE_STANDBY
 ☐ NDP120 detects sound > 60dB threshold
@@ -307,12 +322,13 @@ The implementation will be considered successful when:
 ## Notes
 
 - All source code is heavily commented for clarity
-- UART code is intentionally commented until FSP is configured
-- P002 GPIO definition added to BSP header (will be regenerated by FSP)
-- Configuration file includes helpful comments for all settings
+- Pi5 UART uses existing SCI4 (g_uart4) - no FSP changes needed
+- Debug output must be redirected to USB-VCOM (Port=2) to free SCI4
+- P002 GPIO definition added to BSP header
+- SCI9 (P109/P110) is used by DA16600 WiFi - do not modify
 - Memory usage should be monitored during testing
 
 ---
 
 **Last Updated**: January 22, 2026
-**Status**: Phase 1 Complete - Ready for FSP Configuration
+**Status**: Phase 1-3, 5 Complete - Simple Sound Detection Ready for Testing

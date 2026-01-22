@@ -14,6 +14,13 @@
 #include "usb_pcdc_vcom.h"
 #include "iotc_thread_entry.h"
 
+// ===== Sound Detection System Modules =====
+#include "rp2040_signal.h"
+#include "circular_audio_buffer.h"
+#include "pi5_uart_comm.h"
+#include "audio_level_trigger.h"
+// ==========================================
+
 #define led_event_color(x,y)	(config_items.led_event_color_data[x][y])
 #define SYNTIANT_NDP120_MAX_CLASSES     32
 #define SYNTIANT_NDP120_MAX_NNETWORKS   4
@@ -60,6 +67,12 @@ static char ble_at_string[][36] = {
 
 // Structure to hold inference data and inference counts
 static inferenceData_t inferenceData[SYNTIANT_NDP120_MAX_NNETWORKS][SYNTIANT_NDP120_MAX_CLASSES];
+
+// ===== Sound Detection System State =====
+static circular_audio_buffer_t g_audio_buffer;
+static volatile bool g_pi5_ready = false;
+static volatile bool g_recording_active = false;
+// ========================================
 
 int total_nn = 0;
 int num_labels = 0;
@@ -293,6 +306,150 @@ int bff_reinit_imu(void)
     return s;
 }
 
+// ===== Sound Detection System Functions =====
+
+/**
+ * @brief Callback for audio extraction to circular buffer
+ *
+ * Called by NDP120 platform when audio data is ready.
+ * Writes PCM audio data to the circular buffer.
+ */
+void audio_buffer_callback(uint32_t extract_size, uint8_t *audio_data, void *arg)
+{
+    circular_audio_buffer_t *buffer = (circular_audio_buffer_t *)arg;
+
+    if (extract_size > 0 && buffer != NULL) {
+        uint32_t data_size;
+        int audio_type = ndp_core2_platform_tiny_src_type(audio_data, &data_size);
+
+        if (audio_type == NDP_CORE2_FLOW_SRC_TYPE_PCM0) {
+            // Write PCM audio to circular buffer
+            circular_buffer_write(buffer, audio_data, data_size);
+
+            if (buffer->overflow) {
+                printf("W"); // Warning: buffer overflow
+            }
+        }
+    }
+}
+
+/**
+ * @brief Manage audio recording and transfer to Pi5
+ *
+ * Extracts audio from NDP120 to circular buffer until Pi5 signals ready,
+ * then transfers the buffered audio via UART.
+ */
+void manage_audio_recording(void *pvParameters)
+{
+    FSP_PARAMETER_NOT_USED(pvParameters);
+
+    int s;
+    uint8_t *data_ptr = NULL;
+    uint32_t sample_size, audio_chunk_size;
+
+    printf("=== Starting audio recording manager ===\n");
+
+    // Allocate extraction buffer
+    data_ptr = pvPortMalloc(2048);
+    if (!data_ptr) {
+        printf("ERROR: Failed to allocate audio extraction buffer\n");
+        g_recording_active = false;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Get audio chunk configuration
+    s = ndp_core2_platform_tiny_get_audio_chunk_size(&audio_chunk_size, &sample_size);
+    if (s) {
+        printf("ERROR: Get audio chunk size failed: %d\n", s);
+        vPortFree(data_ptr);
+        g_recording_active = false;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    printf("Audio chunk size: %lu, sample size: %lu\n",
+           (unsigned long)audio_chunk_size, (unsigned long)sample_size);
+
+    // Record until Pi5 signals ready or timeout
+    uint32_t timeout_ticks = pdMS_TO_TICKS(30000UL);  // 30 second timeout
+    TickType_t start_time = xTaskGetTickCount();
+    TickType_t last_print = 0;
+
+    while (g_recording_active && !g_pi5_ready) {
+        // Take mutex for NDP access
+        xSemaphoreTake(g_ndp_mutex, portMAX_DELAY);
+
+        // Extract audio to circular buffer
+        s = ndp_core2_platform_tiny_notify_extract_data(data_ptr,
+                                                         sample_size,
+                                                         audio_buffer_callback,
+                                                         &g_audio_buffer);
+        xSemaphoreGive(g_ndp_mutex);
+
+        if (s == NDP_CORE2_ERROR_DATA_REREAD) {
+            vTaskDelay(pdMS_TO_TICKS(1UL));
+            continue;
+        }
+
+        if (s && s != NDP_CORE2_ERROR_DATA_REREAD) {
+            printf("ERROR: Audio extraction failed: %d\n", s);
+            break;
+        }
+
+        // Check if Pi5 is ready
+        if (pi5_uart_check_ready()) {
+            g_pi5_ready = true;
+            printf("\n>>> Pi5 ready signal received! <<<\n");
+            break;
+        }
+
+        // Check timeout
+        if ((xTaskGetTickCount() - start_time) > timeout_ticks) {
+            printf("\nWARNING: Timeout waiting for Pi5 (30 sec)\n");
+            break;
+        }
+
+        // Show buffer fill level periodically (every second)
+        if ((xTaskGetTickCount() - last_print) > pdMS_TO_TICKS(1000UL)) {
+            printf("Buffer: %lu / %lu bytes\n",
+                   (unsigned long)circular_buffer_available(&g_audio_buffer),
+                   (unsigned long)AUDIO_BUFFER_SIZE);
+            last_print = xTaskGetTickCount();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10UL));
+    }
+
+    // Stop recording
+    circular_buffer_stop_recording(&g_audio_buffer);
+    printf("Recording stopped. Buffer contains: %lu bytes\n",
+           (unsigned long)circular_buffer_available(&g_audio_buffer));
+
+    // Transfer if Pi5 is ready
+    if (g_pi5_ready) {
+        pi5_uart_send_audio_buffer(&g_audio_buffer);
+    } else {
+        printf("Pi5 not ready - audio not transferred\n");
+    }
+
+    // Clean up
+    vPortFree(data_ptr);
+    g_recording_active = false;
+    g_pi5_ready = false;
+
+    // Turn off recording LED
+    uint32_t led_event = LED_EVENT_NONE;
+    xQueueSend(g_led_queue, (void *)&led_event, 0U);
+
+    printf("=== Audio recording cycle complete ===\n\n");
+
+    // Delete this task when done
+    vTaskDelete(NULL);
+}
+
+// ============================================
+
 /* NDP Thread entry function */
 /* pvParameters contains TaskHandle_t */
 void ndp_thread_entry(void *pvParameters)
@@ -416,19 +573,63 @@ void ndp_thread_entry(void *pvParameters)
     /* Enable NDP IRQ */
     ndp_irq_enable();
 
+    // ===== Initialize Sound Detection Modules =====
+    printf("\n=== Initializing Sound Detection System ===\n");
+    circular_buffer_init(&g_audio_buffer);
+    rp2040_signal_init();
+    pi5_uart_init();
+    audio_level_trigger_init();
+    printf("Sound detection system ready\n\n");
+    printf("NOTE: System will trigger on ANY loud sound!\n\n");
+    // ==============================================
+
     /* Start USB thread to enable CDC serial communication and MSC mass storage function */
     start_usb_pcdc_thread();
     vTaskDelay (pdMS_TO_TICKS(1000UL));
 
     memset(&last_stat, 0, sizeof(blink_msg_t));
     memset(&current_stat, 0, sizeof(blink_msg_t));
-    /* TODO: add your own code here */
+
+    /* Main loop - checks for both ML keywords AND audio level threshold */
     while (1)
     {
-        /* Wait until NDP inference event detection */
+        /* Wait for events with timeout (100ms) to allow audio level checking */
         evbits = xEventGroupWaitBits(g_ndp_event_group, EVENT_BIT_VOICE | EVENT_BIT_FLASH,
-            pdTRUE, pdFALSE , portMAX_DELAY);
-     
+            pdTRUE, pdFALSE, pdMS_TO_TICKS(100UL));
+
+        // ===== Check Audio Level (ANY loud sound) =====
+        if (!g_recording_active) {
+            xSemaphoreTake(g_ndp_mutex, portMAX_DELAY);
+            bool sound_detected = audio_level_check_trigger();
+            xSemaphoreGive(g_ndp_mutex);
+
+            if (sound_detected) {
+                printf("\n>>> LOUD SOUND DETECTED - Starting wake sequence <<<\n");
+
+                // Signal RP2040 to wake Pi5
+                rp2040_signal_wake();
+
+                // Start circular buffer recording
+                circular_buffer_start_recording(&g_audio_buffer);
+                g_recording_active = true;
+
+                // Turn on recording LED (green)
+                q_event = LED_COLOR_GREEN;
+                xQueueSend(g_led_queue, (void *)&q_event, 0U);
+
+                // Start audio recording task
+                printf("Starting audio recording task...\n");
+                xTaskCreate((TaskFunction_t)manage_audio_recording,
+                            "AudioRec",
+                            2048,       // Stack size
+                            NULL,       // Parameters
+                            3,          // Priority
+                            NULL);      // Task handle
+            }
+        }
+        // ==============================================
+
+        /* Also handle ML keyword matches (if any) */
         if( evbits & EVENT_BIT_VOICE )
         {
             xSemaphoreTake(g_ndp_mutex,portMAX_DELAY);
@@ -439,12 +640,33 @@ void ndp_thread_entry(void *pvParameters)
 
             ret = ndp_core2_platform_tiny_match_process(&ndp_nn_idx, &ndp_class_idx, &sec_val, NULL);
             if (!ret) {
-                printf("\nNDP MATCH!!! -- [%d:%d]:%s %s sec-val\n\n", 
-                    ndp_nn_idx, ndp_class_idx, labels_per_network[ndp_nn_idx][ndp_class_idx], 
+                printf("\nNDP MATCH!!! -- [%d:%d]:%s %s sec-val\n\n",
+                    ndp_nn_idx, ndp_class_idx, labels_per_network[ndp_nn_idx][ndp_class_idx],
                     (sec_val>0)?"with":"without");
+
+                // Trigger wake sequence if not already recording
+                if (!g_recording_active) {
+                    printf("\n>>> KEYWORD DETECTED - Starting wake sequence <<<\n");
+
+                    rp2040_signal_wake();
+                    circular_buffer_start_recording(&g_audio_buffer);
+                    g_recording_active = true;
+
+                    q_event = LED_COLOR_GREEN;
+                    xQueueSend(g_led_queue, (void *)&q_event, 0U);
+
+                    printf("Starting audio recording task...\n");
+                    xTaskCreate((TaskFunction_t)manage_audio_recording,
+                                "AudioRec",
+                                2048,
+                                NULL,
+                                3,
+                                NULL);
+                }
             }
             xSemaphoreGive(g_ndp_mutex);
 
+            // Original LED and BLE handling (for backwards compatibility)
             switch (ndp_class_idx) {
                 case 0:
                 case 1:

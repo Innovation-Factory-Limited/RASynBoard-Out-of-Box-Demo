@@ -4,7 +4,8 @@
  * Circular audio buffer for storing recorded audio samples
  * while waiting for Pi5 to boot and become ready
  *
- * Buffer size: 256KB = 8 seconds @ 16kHz 16-bit PCM
+ * Buffer size: 64KB = 2 seconds @ 16kHz 16-bit PCM
+ * (Reduced from 256KB due to RA6M4 RAM constraints)
  *
  * Created for: Low-Power Sound Detection System
  */
@@ -16,7 +17,8 @@
 #include <stdbool.h>
 
 // Audio buffer configuration
-#define AUDIO_BUFFER_SIZE (256 * 1024)  // 256KB = 8 seconds @ 16kHz 16-bit
+// Note: 64KB fits within RA6M4 RAM constraints while still providing ~2 seconds of audio
+#define AUDIO_BUFFER_SIZE (64 * 1024)  // 64KB = 2 seconds @ 16kHz 16-bit
 #define AUDIO_SAMPLE_RATE 16000
 #define AUDIO_BYTES_PER_SAMPLE 2
 

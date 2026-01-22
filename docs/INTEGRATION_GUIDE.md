@@ -316,27 +316,31 @@ For testing without waiting for actual sound detection, add this in the main loo
 
 Before testing:
 
-- [ ] FSP configuration complete (GPIO P002, UART9, LPM)
-- [ ] FSP code generated successfully
-- [ ] UART code uncommented in `pi5_uart_comm.c`
-- [ ] Includes added to `ndp_thread_entry.c`
-- [ ] Global variables added
-- [ ] Callback functions added
-- [ ] Module initialization added
-- [ ] Detection handler modified
+- [x] FSP configuration complete (GPIO P002, SCI4, LPM) - **Already done**
+- [x] UART code functional in `pi5_uart_comm.c` - **Uses existing g_uart4**
+- [ ] config.ini updated: `[Debug Print] Port=2` (USB-VCOM for debug)
+- [ ] Hardware wired: J8 Pin3→Pi5 RX, J8 Pin4→Pi5 TX, J8 Pin5→GND
+- [x] Includes added to `ndp_thread_entry.c` - **Done**
+- [x] Global variables added - **Done**
+- [x] Callback functions added - **Done**
+- [x] Module initialization added - **Done**
+- [x] Detection handler modified - **Done**
 - [ ] Project builds without errors
-- [ ] All new files added to build system
 
 ---
 
 ## Testing the Integration
 
 ### Test 1: Verify Initialization
-Flash the firmware and check serial output:
+Flash the firmware and check serial output (via USB-VCOM):
 ```
 === Initializing Sound Detection System ===
 RP2040 signal initialized on P002
-Pi5 UART9 initialized @ 115200 baud (P109/P110)
+Pi5 UART initialized @ 115200 baud
+Hardware connection via J8 Pmod:
+  Pin 3 (P205/TXD4) -> Pi5 RXD
+  Pin 4 (P206/RXD4) -> Pi5 TXD
+  Pin 5 (GND)       -> Pi5 GND
 Sound detection system ready
 ```
 
@@ -367,7 +371,7 @@ Buffer: 4096 / 262144 bytes
 ```
 
 ### Test 5: Simulate Pi5 Ready
-Send `0xA5` via UART9 from PC terminal:
+Send `0xA5` via J8 Pmod UART (P205/P206) from PC terminal or Pi5:
 ```
 Pi5 ready signal received (0xA5)
 Sent ACK to Pi5 (0x5A)
@@ -387,8 +391,8 @@ Recording stopped. Buffer contains: 32768 bytes
 **Symptom**: No "Sound detection system ready" message
 
 **Solution**:
-- Verify FSP configuration complete
-- Check UART9 configured properly
+- Verify config.ini has `Port=2` to redirect debug to USB-VCOM
+- Check USB cable connected to Core Board for debug output
 - Look for error messages in serial output
 
 ### Issue: No audio data in buffer

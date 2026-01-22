@@ -32,18 +32,20 @@ I've created the foundational modules for your low-power sound detection system.
 
 **Follow this guide**: [`docs/FSP_CONFIGURATION_GUIDE.md`](docs/FSP_CONFIGURATION_GUIDE.md)
 
-You need to configure:
-- GPIO P002 (output for RP2040 signal)
-- UART9 on P109/P110 (communication with Pi5)
-- Low Power Mode with IRQ5 wake
+**Good news: Most FSP configuration is already done!**
+
+Already configured:
+- ✓ GPIO P002 as output
+- ✓ SCI4 (g_uart4) on P205/P206 for Pi5 communication
+- ✓ LPM stack with Standby mode + IRQ5 wake
 
 **Quick checklist:**
-1. Open `configuration.xml` in e2studio
-2. Add GPIO P002 as output
-3. Add UART9 stack (SCI9) with pins P109/P110
-4. Add LPM stack with Standby mode + IRQ5 wake
-5. Generate code
-6. Uncomment UART calls in `src/pi5_uart_comm.c`
+1. Update `config.ini` on SD card: `[Debug Print] Port=2`
+2. Wire J8 Pmod connector to Pi5:
+   - Pin 3 (P205/TXD4) → Pi5 RXD (GPIO15)
+   - Pin 4 (P206/RXD4) → Pi5 TXD (GPIO14)
+   - Pin 5 (GND) → Pi5 GND
+3. Build and flash the project
 
 ### Step 2: Build and Test Components (1 day)
 
@@ -136,7 +138,7 @@ Documentation:
          │
          └──► Records to 256KB buffer
                │
-               └──► UART9 ──► Pi5 (when ready)
+               └──► SCI4 (J8 Pmod) ──► Pi5 (when ready)
 ```
 
 ---
@@ -162,17 +164,19 @@ GPIO_Pulse_Duration=100  # 100ms wake pulse
 | Pin | Function | Purpose |
 |-----|----------|---------|
 | P002 | GPIO Output | RP2040 wake signal |
-| P109 | UART9 TxD | Send audio to Pi5 |
-| P110 | UART9 RxD | Receive ready from Pi5 |
+| P205 | SCI4 TxD (J8 Pin 3) | Send audio to Pi5 |
+| P206 | SCI4 RxD (J8 Pin 4) | Receive ready from Pi5 |
+
+**Note:** P109/P110 (SCI9) is used by DA16600 WiFi module - do not use for Pi5.
 
 ---
 
 ## Testing Sequence
 
 ### Phase 1: Component Testing
-1. ✓ GPIO pulse (oscilloscope: 100ms @ 3.3V)
+1. ✓ GPIO pulse (oscilloscope: 100ms @ 3.3V on P002)
 2. ✓ Circular buffer (write/read 256KB)
-3. ✓ UART loopback (P109→P110)
+3. ✓ UART loopback (J8 Pin3→Pin4, using USB-serial adapter)
 
 ### Phase 2: Integration Testing
 4. ⏳ Detection → GPIO signal → record
@@ -219,9 +223,9 @@ When working correctly:
 
 ### Build Errors
 
-**Issue**: Undefined reference to `g_uart9_ctrl`
+**Issue**: Undefined reference errors
 
-**Solution**: Configure UART9 in FSP first, then generate code
+**Solution**: Ensure all source files are included in the build
 
 ### GPIO Not Working
 
@@ -234,13 +238,19 @@ When working correctly:
 
 ### UART Not Transmitting
 
-**Issue**: No data on P109
+**Issue**: No data on J8 Pmod (P205)
 
 **Solution**:
-1. Verify UART9 configured in FSP
-2. Check uncommented `R_SCI_UART_Write()` calls
-3. Verify callback registered
-4. Test with loopback (P109→P110)
+1. Verify `config.ini` has `Port=2` (debug to USB-VCOM)
+2. Check wiring: J8 Pin3 (TX) → Pi5 RX
+3. Verify callback is being called
+4. Test with loopback (J8 Pin3→Pin4)
+
+### Debug Output Missing
+
+**Issue**: No serial output after setting Port=2
+
+**Solution**: Connect USB cable to Core Board USB-C for USB-VCOM debug output
 
 ---
 
