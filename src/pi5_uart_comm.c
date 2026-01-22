@@ -87,6 +87,30 @@ void pi5_uart_init(void)
     printf("\n");
     printf("IMPORTANT: Ensure config.ini has [Debug Print] Port=2\n");
     printf("to redirect debug output to USB-VCOM, freeing SCI4 for Pi5.\n");
+
+    // ===== Send Hello World test message over UART =====
+    // This helps verify the UART TX is working - check with serial terminal on Pi5
+    const char *hello_msg = "\r\n=== RASynBoard Pi5 UART Ready ===\r\n"
+                            "Hello from RASynBoard!\r\n"
+                            "Waiting for Pi5 ready signal (0xA5)...\r\n\r\n";
+
+    uart_tx_complete = false;
+    err = R_SCI_UART_Write(&g_uart4_ctrl, (uint8_t*)hello_msg, strlen(hello_msg));
+    if (FSP_SUCCESS == err) {
+        // Wait for transmission with timeout
+        uint32_t timeout = 2000;
+        while (!uart_tx_complete && timeout > 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            timeout--;
+        }
+        if (timeout > 0) {
+            printf(">>> Sent Hello World test message over Pi5 UART <<<\n");
+        } else {
+            printf("WARNING: Hello message TX timeout\n");
+        }
+    } else {
+        printf("WARNING: Failed to send Hello message: %d\n", err);
+    }
 }
 
 bool pi5_uart_check_ready(void)
